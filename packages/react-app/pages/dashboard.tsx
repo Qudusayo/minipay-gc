@@ -1,15 +1,16 @@
 import Layout from "@/layout/layout";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 
 import { Swiper, SwiperSlide } from "swiper/react";
 import { EffectCards } from "swiper/modules";
 
 import "swiper/css";
 import "swiper/css/effect-cards";
-import GiftCard from "@/components/gift-card";
+import GiftCard, { iconTypes } from "@/components/gift-card";
 import { Button, Checkbox, Input, Switch, Textarea } from "@nextui-org/react";
 import html2canvas from "html2canvas";
 import { useFormik } from "formik";
+import { cards, contractABI } from "@/utils/constants";
 
 const Dashboard = () => {
   const giftCardRef = useRef<HTMLDivElement>(null);
@@ -26,17 +27,24 @@ const Dashboard = () => {
 
     onSubmit: async (values) => {
       try {
-        console.log(values);
         if (giftCardRef.current) {
           const canvas = await html2canvas(giftCardRef.current, {
             backgroundColor: null,
             scale: 2,
           });
           const dataUrl = canvas.toDataURL("image/png");
-          const a = document.createElement("a");
-          a.href = dataUrl;
-          a.download = "gift-card.png";
-          a.click();
+          const imageBase64 = dataUrl.split(",")[1];
+
+          const tokenMetadata = {
+            name: values.name || iconTypes[cards[cardIndex]].name,
+            description: values.message,
+            image: imageBase64,
+          };
+
+          const tokenURI = Buffer.from(JSON.stringify(tokenMetadata)).toString(
+            "base64"
+          );
+          console.log({ tokenURI });
         }
       } catch (error) {
         console.error(error);

@@ -4,7 +4,7 @@ import heart from "assets/heart.png";
 import marriage from "assets/marriage.png";
 import { forwardRef } from "react";
 
-const iconTypes = {
+export const iconTypes = {
   giftbox: {
     icon: giftbox.src,
     color: "#1E002B",
