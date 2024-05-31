@@ -13,6 +13,7 @@ import { celo, celoAlfajores } from "wagmi/chains";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { NextUIProvider } from "@nextui-org/react";
 import { Work_Sans } from "@next/font/google";
+import ToasterProvider from "@/components/ToasterProvider";
 
 const connectors = connectorsForWallets(
   [
@@ -51,6 +52,7 @@ function App({ Component, pageProps }: AppProps) {
           <NextUIProvider>
             <main className={work_sans.className}>
               <Component {...pageProps} />
+              <ToasterProvider />
             </main>
           </NextUIProvider>
         </RainbowKitProvider>

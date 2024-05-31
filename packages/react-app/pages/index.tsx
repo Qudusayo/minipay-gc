@@ -6,9 +6,24 @@ import "swiper/css/effect-cards";
 import GiftCard from "@/components/gift-card";
 import { Button } from "@nextui-org/react";
 import { useRouter } from "next/router";
+import { useConnect, useAccount } from "wagmi";
+import { injected } from "wagmi/connectors";
 
 export default function Home() {
   const { push } = useRouter();
+  const { connect } = useConnect();
+  const { isConnected } = useAccount();
+
+  const login = async () => {
+    if (isConnected) {
+      push("/dashboard");
+    } else {
+      connect(
+        { connector: injected() },
+        { onSuccess: () => push("/dashboard") }
+      );
+    }
+  };
 
   return (
     <div className="h-dvh w-screen">
@@ -35,13 +50,15 @@ export default function Home() {
           )}
         </Swiper>
       </div>
-      <Button
-        variant="solid"
-        className="absolute bg-fig text-white bottom-10 left-1/2 -translate-x-1/2 w-full max-w-[300px]"
-        onClick={() => push("/dashboard")}
-      >
-        Get Started
-      </Button>
+      <div>
+        <Button
+          variant="solid"
+          className="absolute bg-fig text-white bottom-10 left-1/2 -translate-x-1/2 w-full max-w-[300px]"
+          onClick={login}
+        >
+          Get Started
+        </Button>
+      </div>
     </div>
   );
 }

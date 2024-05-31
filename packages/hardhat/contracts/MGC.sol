@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
+// Compatible with OpenZeppelin Contracts ^5.0.0
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract GiftCard is ERC721URIStorage, Ownable {
+contract MGC is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable {
     uint256 private _tokenIdCounter;
 
     struct GiftCardStruct {
@@ -25,15 +27,16 @@ contract GiftCard is ERC721URIStorage, Ownable {
     uint256 private _totalFees;
     uint256 private _totalFeesWithdrawn;
 
-    constructor(
-        address initialOwner
-    ) ERC721("Gift NFT Card", "GNFTCARD") Ownable(initialOwner) {}
+    constructor(address initialOwner)
+        ERC721("Minipay Gift Card", "MGC")
+        Ownable(initialOwner)
+    {}
 
     function safeMint(
         address to,
         string memory message,
         string memory signedBy,
-        string memory tokenURI
+        string memory uri
     ) public payable {
         uint256 minGiftValue = 100_000_000_000_000_000;
         uint256 minMintFee = _calculateMintFees(minGiftValue);
@@ -49,10 +52,8 @@ contract GiftCard is ERC721URIStorage, Ownable {
         uint256 giftValue = msg.value - mintFees;
 
         uint256 tokenId = _tokenIdCounter++;
-
         _safeMint(to, tokenId);
-
-        _setTokenURI(tokenId, tokenURI);
+        _setTokenURI(tokenId, uri);
 
         _giftMap[tokenId] = GiftCardStruct({
             tokenId: tokenId,
@@ -77,19 +78,42 @@ contract GiftCard is ERC721URIStorage, Ownable {
         return fee;
     }
 
-    function _getGiftCard(
-        uint256 tokenId
-    ) private view returns (GiftCardStruct memory) {
+    function lengthOfSentGiftCards() public view returns (uint256) {
+        return _sentGifts[msg.sender].length;
+    }
+
+    function _getGiftCard(uint256 tokenId)
+        private
+        view
+        returns (GiftCardStruct memory)
+    {
         GiftCardStruct memory card = _giftMap[tokenId];
         require(card.isInitialized == true, "Gift card not found");
         return card;
     }
 
+    function getGiftCardByIndex(uint256 index)
+        public
+        view
+        returns (GiftCardStruct memory)
+    {
+        uint256 tokenId = tokenOfOwnerByIndex(msg.sender, index);
+        return _getGiftCard(tokenId);
+    }
+
+    function getSentGiftCardByIndex(uint256 index)
+        public
+        view
+        returns (GiftCardStruct memory)
+    {
+        uint256[] memory tokenIds = _sentGifts[msg.sender];
+        require(tokenIds.length > index, "GiftNFTCard: gift card not found");
+        uint256 tokenId = tokenIds[index];
+        return _getGiftCard(tokenId);
+    }
+
     function unwrapGiftCard(uint256 tokenId) public {
-        require(
-            ownerOf(tokenId) == msg.sender,
-            "Caller is not owner"
-        );
+        require(ownerOf(tokenId) == msg.sender, "Caller is not owner");
         GiftCardStruct memory gift = _getGiftCard(tokenId);
         _unwrapGiftCardAndDisburse(gift, msg.sender);
     }
@@ -126,9 +150,35 @@ contract GiftCard is ERC721URIStorage, Ownable {
         require(sent, "Failed to withdraw fees");
     }
 
-    function supportsInterface(
-        bytes4 interfaceId
-    ) public view override(ERC721URIStorage) returns (bool) {
+    // The following functions are overrides required by Solidity.
+
+    function tokenURI(uint256 tokenId)
+        public
+        view
+        override(ERC721, ERC721URIStorage)
+        returns (string memory)
+    {
+        return super.tokenURI(tokenId);
+    }
+
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        override(ERC721, ERC721URIStorage, ERC721Enumerable)
+        returns (bool)
+    {
         return super.supportsInterface(interfaceId);
+    }
+
+    function _update(
+      address to,
+      uint256 tokenId,
+      address auth
+    ) internal override(ERC721, ERC721Enumerable) returns (address) {
+      return super._update(to, tokenId, auth);
+    }
+
+    function _increaseBalance(address account, uint128 value) internal override(ERC721, ERC721Enumerable) {
+      super._increaseBalance(account, value);
     }
 }

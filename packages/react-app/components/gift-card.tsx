@@ -2,6 +2,7 @@ import giftbox from "assets/giftbox.png";
 import santa from "assets/santa.png";
 import heart from "assets/heart.png";
 import marriage from "assets/marriage.png";
+import celo from "assets/celo.png";
 import { forwardRef } from "react";
 
 export const iconTypes = {
@@ -24,6 +25,11 @@ export const iconTypes = {
     icon: santa.src,
     color: "#116cc1",
     name: "MERRY CHRISTMAS",
+  },
+  celo: {
+    icon: celo.src,
+    color: "#1E002B",
+    name: "",
   },
 };
 
