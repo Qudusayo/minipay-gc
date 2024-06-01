@@ -10,17 +10,34 @@ import GiftCard, { iconTypes } from "@/components/gift-card";
 import { Button, Checkbox, Input, Switch, Textarea } from "@nextui-org/react";
 import html2canvas from "html2canvas";
 import { useFormik } from "formik";
-import { cards, contractABI } from "@/utils/constants";
-import { useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import {
+  cards,
+  config,
+  contractABI,
+  erc20Contract,
+  MGCADDRESS,
+  publicClient,
+  walletClient,
+} from "@/utils/constants";
+import {
+  useAccount,
+  useWaitForTransactionReceipt,
+  useWriteContract,
+} from "wagmi";
 import { parseEther } from "viem";
 import { uploadIpfs } from "@/utils/uploadIpfs";
 import * as Yup from "yup";
 import toast from "react-hot-toast";
 
+import { readContract as readContractAsync } from "@wagmi/core";
+
+import { writeContract as writeContractCore } from "@wagmi/core";
+
 const Dashboard = () => {
   const { data: hash, isPending, writeContract } = useWriteContract();
   const [cardIndex, setCardIndex] = useState(0);
   const giftCardRef = useRef<HTMLDivElement>(null);
+  const { address } = useAccount();
 
   const giftCard = useFormik({
     initialValues: {
@@ -46,6 +63,26 @@ const Dashboard = () => {
 
     onSubmit: async (values) => {
       try {
+        const approval = await readContractAsync(config, {
+          ...erc20Contract,
+          functionName: "allowance",
+          args: [address as `0x${string}`, MGCADDRESS],
+        });
+
+        console.log({ approval });
+
+        if (approval < parseEther(values.amount.toString())) {
+          const hash = await walletClient.writeContract({
+            ...erc20Contract,
+            functionName: "approve",
+            args: [MGCADDRESS, parseEther(values.amount.toString())],
+            account: address as `0x${string}`,
+          });
+          const receipt = await publicClient.waitForTransactionReceipt({
+            hash,
+          });
+        }
+
         if (giftCardRef.current) {
           const canvas = await html2canvas(giftCardRef.current, {
             backgroundColor: null,
@@ -87,11 +124,19 @@ const Dashboard = () => {
               address: process.env
                 .NEXT_PUBLIC_GIFT_CARD_ADDRESS as `0x${string}`,
               functionName: "safeMint",
-              args: [values.recipient, values.message, msgName, tokenURI],
-              value: parseEther(values.amount.toString()),
+              args: [
+                values.recipient,
+                parseEther(values.amount.toString()),
+                values.message,
+                msgName,
+                tokenURI,
+              ],
             },
             {
-              onError: (error) => toast.error(error.message.split("\n")[0]),
+              onError: (error) => {
+                console.log(error);
+                toast.error(error.message.split("\n")[0]);
+              },
               onSuccess: () =>
                 toast.success("Transaction submitted successfully!"),
             }

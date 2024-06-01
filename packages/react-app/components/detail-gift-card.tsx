@@ -121,6 +121,7 @@ const GiftCard = ({
           base: "bg-transparent shadow-none text-white",
         }}
         closeButton={<></>}
+        scrollBehavior="outside"
       >
         <ModalContent>
           {(onClose) => (

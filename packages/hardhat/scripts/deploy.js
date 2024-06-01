@@ -8,13 +8,15 @@ const { ethers, upgrades } = require("hardhat");
 const fs = require("fs");
 const path = require("path");
 
+const cusdAddress = "0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1";
+
 async function main() {
   const owner = (await ethers.getSigner(0)).address;
   console.log("Deploying MGC with the account:", owner);
 
   const MGC = await ethers.getContractFactory("MGC");
 
-  const mgc = await MGC.deploy(owner);
+  const mgc = await MGC.deploy(owner, cusdAddress);
   await mgc.deployed();
 
   console.log("GiftCard deployed to:", mgc.address);

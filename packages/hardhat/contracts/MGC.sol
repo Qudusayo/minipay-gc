@@ -2,12 +2,14 @@
 // Compatible with OpenZeppelin Contracts ^5.0.0
 pragma solidity ^0.8.20;
 
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract MGC is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable {
+    IERC20 public token;
     uint256 private _tokenIdCounter;
 
     struct GiftCardStruct {
@@ -27,13 +29,16 @@ contract MGC is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable {
     uint256 private _totalFees;
     uint256 private _totalFeesWithdrawn;
 
-    constructor(address initialOwner)
-        ERC721("Minipay Gift Card", "MGC")
-        Ownable(initialOwner)
-    {}
+    constructor(
+        address initialOwner,
+        address _tokenAddress
+    ) ERC721("Minipay Gift Card", "MGC") Ownable(initialOwner) {
+        token = IERC20(_tokenAddress);
+    }
 
     function safeMint(
         address to,
+        uint256 _amount,
         string memory message,
         string memory signedBy,
         string memory uri
@@ -43,13 +48,19 @@ contract MGC is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable {
         uint256 minValue = minGiftValue + minMintFee;
 
         require(
-            msg.value >= minValue,
+            _amount >= minValue,
             "Gift card value must be greater than or equal to 0.1 CELO"
         );
 
-        uint256 mintFees = _calculateMintFees(msg.value);
+        // Transfer the amount from the user to the contract
+        require(
+            token.transferFrom(msg.sender, address(this), _amount),
+            "Failed to transfer tokens"
+        );
+
+        uint256 mintFees = _calculateMintFees(_amount);
         _totalFees += mintFees;
-        uint256 giftValue = msg.value - mintFees;
+        uint256 giftValue = _amount - mintFees;
 
         uint256 tokenId = _tokenIdCounter++;
         _safeMint(to, tokenId);
@@ -82,30 +93,24 @@ contract MGC is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable {
         return _sentGifts[msg.sender].length;
     }
 
-    function _getGiftCard(uint256 tokenId)
-        private
-        view
-        returns (GiftCardStruct memory)
-    {
+    function _getGiftCard(
+        uint256 tokenId
+    ) private view returns (GiftCardStruct memory) {
         GiftCardStruct memory card = _giftMap[tokenId];
         require(card.isInitialized == true, "Gift card not found");
         return card;
     }
 
-    function getGiftCardByIndex(uint256 index)
-        public
-        view
-        returns (GiftCardStruct memory)
-    {
+    function getGiftCardByIndex(
+        uint256 index
+    ) public view returns (GiftCardStruct memory) {
         uint256 tokenId = tokenOfOwnerByIndex(msg.sender, index);
         return _getGiftCard(tokenId);
     }
 
-    function getSentGiftCardByIndex(uint256 index)
-        public
-        view
-        returns (GiftCardStruct memory)
-    {
+    function getSentGiftCardByIndex(
+        uint256 index
+    ) public view returns (GiftCardStruct memory) {
         uint256[] memory tokenIds = _sentGifts[msg.sender];
         require(tokenIds.length > index, "GiftNFTCard: gift card not found");
         uint256 tokenId = tokenIds[index];
@@ -130,8 +135,10 @@ contract MGC is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable {
         _giftMap[gift.tokenId].isUnwrapped = true;
         _giftMap[gift.tokenId].amount = 0;
         address payable sender = payable(owner);
-        (bool sent, ) = sender.call{value: giftAmount}("");
-        require(sent, "Failed to unwrap gift card");
+        require(
+            token.transfer(sender, giftAmount),
+            "Failed to unwrap gift card"
+        );
     }
 
     function getTotalFees() public view onlyOwner returns (uint256) {
@@ -146,22 +153,23 @@ contract MGC is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable {
         uint256 unwithdrawnFees = _totalFees - _totalFeesWithdrawn;
         require(unwithdrawnFees > 0, "No fees to withdraw yet");
         _totalFeesWithdrawn = _totalFees;
-        (bool sent, ) = payable(msg.sender).call{value: unwithdrawnFees}("");
-        require(sent, "Failed to withdraw fees");
+        require(
+            token.transfer(msg.sender, unwithdrawnFees),
+            "Failed to withdraw fees"
+        );
     }
 
     // The following functions are overrides required by Solidity.
 
-    function tokenURI(uint256 tokenId)
-        public
-        view
-        override(ERC721, ERC721URIStorage)
-        returns (string memory)
-    {
+    function tokenURI(
+        uint256 tokenId
+    ) public view override(ERC721, ERC721URIStorage) returns (string memory) {
         return super.tokenURI(tokenId);
     }
 
-    function supportsInterface(bytes4 interfaceId)
+    function supportsInterface(
+        bytes4 interfaceId
+    )
         public
         view
         override(ERC721, ERC721URIStorage, ERC721Enumerable)
@@ -171,14 +179,17 @@ contract MGC is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable {
     }
 
     function _update(
-      address to,
-      uint256 tokenId,
-      address auth
+        address to,
+        uint256 tokenId,
+        address auth
     ) internal override(ERC721, ERC721Enumerable) returns (address) {
-      return super._update(to, tokenId, auth);
+        return super._update(to, tokenId, auth);
     }
 
-    function _increaseBalance(address account, uint128 value) internal override(ERC721, ERC721Enumerable) {
-      super._increaseBalance(account, value);
+    function _increaseBalance(
+        address account,
+        uint128 value
+    ) internal override(ERC721, ERC721Enumerable) {
+        super._increaseBalance(account, value);
     }
 }
