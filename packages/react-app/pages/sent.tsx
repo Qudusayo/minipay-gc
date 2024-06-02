@@ -50,8 +50,8 @@ const Sent = () => {
         </div>
       ) : sentGifts.length ? (
         <div className="grid grid-cols-2 gap-4 p-4">
-          {sentGifts.map((sentGift) => (
-            <GiftCard key={sentGift.timestamp} gift={sentGift} />
+          {sentGifts.map((sentGift, index) => (
+            <GiftCard key={index} gift={sentGift} />
           ))}
         </div>
       ) : (

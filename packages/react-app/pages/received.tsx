@@ -53,9 +53,9 @@ const Received = () => {
         </div>
       ) : !!receivedGifts.length ? (
         <div className="grid grid-cols-2 gap-4 p-4">
-          {receivedGifts.map((receivedGift) => (
+          {receivedGifts.map((receivedGift, index) => (
             <GiftCard
-              key={receivedGift.timestamp}
+              key={index}
               gift={receivedGift}
               isReceived
               refetch={refetch}
