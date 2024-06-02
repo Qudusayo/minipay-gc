@@ -1,211 +1,167 @@
-// import {
-//   federatedAttestationsABI,
-//   odisPaymentsABI,
-//   stableTokenABI,
-// } from "@celo/abis";
+import { Contract, Wallet, ethers } from "ethers";
+import { AuthSigner, ServiceContext } from "@celo/identity/lib/odis/query";
+import { OdisUtils } from "@celo/identity";
+import { IdentifierPrefix } from "@celo/identity/lib/odis/identifier";
+import {
+  FA_CONTRACT,
+  FA_PROXY_ADDRESS,
+  ODIS_PAYMENTS_CONTRACT,
+  ODIS_PAYMENTS_PROXY_ADDRESS,
+  SERVICE_CONTEXT,
+  STABLE_TOKEN_ADDRESS,
+  STABLE_TOKEN_CONTRACT,
+} from "./constants";
 
-// import { getContract, parseEther } from "viem";
-// import { OdisUtils } from "@celo/identity";
-// import { OdisContextName } from "@celo/identity/lib/odis/query";
+export const ONE_CENT_CUSD = ethers.utils.parseEther("0.01");
 
-// const ONE_CENT_CUSD = parseEther("0.01");
+export const NOW_TIMESTAMP = Math.floor(new Date().getTime() / 1000);
 
-// const SERVICE_CONTEXT =
-//   process.env.ENVIRONMENT === "TESTNET"
-//     ? OdisContextName.ALFAJORES
-//     : OdisContextName.MAINNET;
+export class SocialConnectIssuer {
+  private readonly federatedAttestationsContract: Contract;
+  private readonly odisPaymentsContract: Contract;
+  private readonly stableTokenContract: Contract;
+  readonly serviceContext: ServiceContext;
 
-// class SocialConnectIssuer {
-//   walletClient;
-//   authSigner;
+  constructor(
+    private readonly wallet: Wallet,
+    private readonly authSigner: AuthSigner
+  ) {
+    this.serviceContext = OdisUtils.Query.getServiceContext(SERVICE_CONTEXT);
+    this.federatedAttestationsContract = new Contract(
+      FA_PROXY_ADDRESS,
+      FA_CONTRACT.abi,
+      this.wallet
+    );
+    this.odisPaymentsContract = new Contract(
+      ODIS_PAYMENTS_PROXY_ADDRESS,
+      ODIS_PAYMENTS_CONTRACT.abi,
+      this.wallet
+    );
+    this.stableTokenContract = new Contract(
+      STABLE_TOKEN_ADDRESS,
+      STABLE_TOKEN_CONTRACT.abi,
+      this.wallet
+    );
+  }
 
-//   federatedAttestationsContractAddress;
-//   federatedAttestationsContract;
+  async getObfuscatedId(plaintextId: string, identifierType: IdentifierPrefix) {
+    // TODO look into client side blinding
+    const { obfuscatedIdentifier } =
+      await OdisUtils.Identifier.getObfuscatedIdentifier(
+        plaintextId,
+        identifierType,
+        this.wallet.address,
+        this.authSigner,
+        this.serviceContext
+      );
+    return obfuscatedIdentifier;
+  }
 
-//   odisPaymentsContractAddress;
-//   odisPaymentsContract;
+  async checkAndTopUpODISQuota() {
+    const remainingQuota = await this.checkODISQuota();
 
-//   stableTokenContractAddress;
-//   stableTokenContract;
+    if (remainingQuota < 1) {
+      // TODO make threshold a constant
+      const approvalTxReceipt = (
+        await this.stableTokenContract.increaseAllowance(
+          this.odisPaymentsContract.address,
+          ONE_CENT_CUSD // TODO we should increase by more
+        )
+      ).wait();
 
-//   serviceContext;
-//   initialized = false;
+      console.log(approvalTxReceipt);
 
-//   constructor(walletClient, authSigner) {
-//     this.walletClient = walletClient;
-//     this.authSigner = authSigner;
-//     this.serviceContext = OdisUtils.Query.getServiceContext(SERVICE_CONTEXT);
-//   }
+      const odisPaymentTxReceipt = (
+        await this.odisPaymentsContract.payInCUSD(
+          this.wallet.address,
+          ONE_CENT_CUSD // TODO we should increase by more
+        )
+      ).wait();
 
-//   async initialize() {
-//     this.federatedAttestationsContractAddress = await getCoreContractAddress(
-//       "FederatedAttestations"
-//     );
+      console.log(odisPaymentTxReceipt);
+    }
+  }
 
-//     this.federatedAttestationsContract = getContract({
-//       address: this.federatedAttestationsContractAddress,
-//       abi: federatedAttestationsABI,
+  async getObfuscatedIdWithQuotaRetry(
+    plaintextId: string,
+    identifierType: IdentifierPrefix
+  ) {
+    try {
+      return await this.getObfuscatedId(plaintextId, identifierType);
+    } catch {
+      await this.checkAndTopUpODISQuota();
+      return this.getObfuscatedId(plaintextId, identifierType);
+    }
+  }
 
-//       // Needed for lookup
-//       publicClient,
+  async registerOnChainIdentifier(
+    plaintextId: string,
+    identifierType: IdentifierPrefix,
+    address: string
+  ) {
+    const obfuscatedId = await this.getObfuscatedIdWithQuotaRetry(
+      plaintextId,
+      identifierType
+    );
 
-//       // Needed for registeration and de-registration
-//       walletClient: this.walletClient,
-//     });
+    const tx =
+      await this.federatedAttestationsContract.registerAttestationAsIssuer(
+        // TODO check if there are better code patterns for sending txs
+        obfuscatedId,
+        address,
+        NOW_TIMESTAMP
+      );
+    const receipt = await tx.wait();
+    return receipt;
+  }
 
-//     this.odisPaymentsContractAddress = await getCoreContractAddress(
-//       "OdisPayments"
-//     );
-//     this.odisPaymentsContract = getContract({
-//       address: this.odisPaymentsContractAddress,
-//       abi: odisPaymentsABI,
-//       walletClient: this.walletClient,
-//     });
+  async deregisterOnChainIdentifier(
+    plaintextId: string,
+    identifierType: IdentifierPrefix,
+    address: string
+  ) {
+    const obfuscatedId = await this.getObfuscatedIdWithQuotaRetry(
+      plaintextId,
+      identifierType
+    );
+    const tx = await this.federatedAttestationsContract.revokeAttestation(
+      obfuscatedId,
+      this.wallet.address,
+      address
+    );
+    const receipt = await tx.wait();
+    return receipt;
+  }
 
-//     this.stableTokenContractAddress = await getCoreContractAddress(
-//       "StableToken"
-//     );
-//     this.stableTokenContract = getContract({
-//       address: this.stableTokenContractAddress,
-//       abi: stableTokenABI,
-//       walletClient: this.walletClient,
-//     });
+  async checkODISQuota() {
+    const { remainingQuota } = await OdisUtils.Quota.getPnpQuotaStatus(
+      this.wallet.address,
+      this.authSigner,
+      this.serviceContext
+    );
+    console.log("Remaining Quota", remainingQuota);
+    return remainingQuota;
+  }
 
-//     this.initialized = true;
-//   }
-
-//   async #getObfuscatedId(plaintextId, identifierType) {
-//     // TODO look into client side blinding
-//     const { obfuscatedIdentifier } =
-//       await OdisUtils.Identifier.getObfuscatedIdentifier(
-//         plaintextId,
-//         identifierType,
-//         this.walletClient.account.address,
-//         this.authSigner,
-//         this.serviceContext
-//       );
-//     return obfuscatedIdentifier;
-//   }
-
-//   async #checkAndTopUpODISQuota() {
-//     const remainingQuota = await this.checkODISQuota();
-
-//     if (remainingQuota < 1) {
-//       // TODO make threshold a constant
-//       let approvalTxHash =
-//         await this.stableTokenContract.write.increaseAllowance([
-//           this.odisPaymentsContractAddress,
-//           ONE_CENT_CUSD, // TODO we should increase by more
-//         ]);
-
-//       let approvalTxReceipt = await publicClient.waitForTransactionReceipt({
-//         hash: approvalTxHash,
-//       });
-
-//       let odisPaymentTxHash = await this.odisPaymentsContract.write.payInCUSD([
-//         this.walletClient.account,
-//         ONE_CENT_CUSD, // TODO we should increase by more
-//       ]);
-
-//       let odisPaymentReceipt = await publicClient.waitForTransactionReceipt({
-//         hash: odisPaymentTxHash,
-//       });
-//     }
-//   }
-
-//   async getObfuscatedIdWithQuotaRetry(plaintextId, identifierType) {
-//     if (this.initialized) {
-//       try {
-//         return await this.#getObfuscatedId(plaintextId, identifierType);
-//       } catch {
-//         await this.#checkAndTopUpODISQuota();
-//         return this.#getObfuscatedId(plaintextId, identifierType);
-//       }
-//     }
-//     throw new Error("SocialConnect instance not initialized");
-//   }
-
-//   async registerOnChainIdentifier(plaintextId, identifierType, address) {
-//     if (this.initialized) {
-//       const obfuscatedId = await this.getObfuscatedIdWithQuotaRetry(
-//         plaintextId,
-//         identifierType
-//       );
-
-//       const hash =
-//         await this.federatedAttestationsContract.write.registerAttestationAsIssuer(
-//           [
-//             // TODO check if there are better code patterns for sending txs
-//             obfuscatedId,
-//             address,
-//             NOW_TIMESTAMP,
-//           ]
-//         );
-
-//       const receipt = await publicClient.waitForTransactionReceipt({
-//         hash,
-//       });
-
-//       return receipt;
-//     }
-//     throw new Error("SocialConnect instance not initialized");
-//   }
-
-//   async deregisterOnChainIdentifier(plaintextId, identifierType, address) {
-//     if (this.initialized) {
-//       const obfuscatedId = await this.getObfuscatedIdWithQuotaRetry(
-//         plaintextId,
-//         identifierType
-//       );
-//       const hash =
-//         await this.federatedAttestationsContract.write.revokeAttestation([
-//           obfuscatedId,
-//           this.walletClient.account.address,
-//           address,
-//         ]);
-
-//       const receipt = await publicClient.waitForTransactionReceipt({
-//         hash,
-//       });
-
-//       return receipt;
-//     }
-//     throw new Error("SocialConnect instance not initialized");
-//   }
-
-//   async checkODISQuota() {
-//     if (this.initialized) {
-//       const { remainingQuota } = await OdisUtils.Quota.getPnpQuotaStatus(
-//         this.walletClient.account.address,
-//         this.authSigner,
-//         this.serviceContext
-//       );
-//       console.log("Remaining Quota", remainingQuota);
-//       return remainingQuota;
-//     }
-//     throw new Error("SocialConnect instance not initialized");
-//   }
-
-//   async lookup(plaintextId, identifierType, issuerAddresses) {
-//     if (this.initialized) {
-//       const obfuscatedId = await this.getObfuscatedIdWithQuotaRetry(
-//         plaintextId,
-//         identifierType
-//       );
-
-//       const attestations =
-//         await this.federatedAttestationsContract.read.lookupAttestations([
-//           obfuscatedId,
-//           issuerAddresses,
-//         ]);
-
-//       return {
-//         accounts: attestations[1], // Viem returns data as is from contract not in JSON
-//         obfuscatedId,
-//       };
-//     }
-//     throw new Error("SocialConnect instance not initialized");
-//   }
-// }
-
-export {}
+  async lookup(
+    plaintextId: string,
+    identifierType: IdentifierPrefix,
+    issuerAddresses: string[]
+  ) {
+    const obfuscatedId = await this.getObfuscatedIdWithQuotaRetry(
+      plaintextId,
+      identifierType
+    );
+    console.log(obfuscatedId);
+    const attestations =
+      await this.federatedAttestationsContract.lookupAttestations(
+        obfuscatedId,
+        issuerAddresses
+      );
+    console.log(attestations);
+    return {
+      accounts: attestations.accounts as string[], // TODO typesafety
+      obfuscatedId,
+    };
+  }
+}

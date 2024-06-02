@@ -26,16 +26,15 @@ import {
 } from "wagmi";
 import { parseEther } from "viem";
 import { uploadIpfs } from "@/utils/uploadIpfs";
-import * as Yup from "yup";
 import toast from "react-hot-toast";
-
 import { readContract as readContractAsync } from "@wagmi/core";
-
-import { writeContract as writeContractCore } from "@wagmi/core";
+import { phoneNumberRegex, validationSchema } from "@/utils/validationSchema";
+import { LookupResponse } from "./api/socialconnect/lookup";
 
 const Dashboard = () => {
   const { data: hash, isPending, writeContract } = useWriteContract();
   const [cardIndex, setCardIndex] = useState(0);
+  const [resolvedAccount, setResolvedAccount] = useState("");
   const giftCardRef = useRef<HTMLDivElement>(null);
   const { address } = useAccount();
 
@@ -49,27 +48,44 @@ const Dashboard = () => {
       additionalFee: false,
     },
 
-    validationSchema: Yup.object({
-      // Must be a valid Ethereum address
-      recipient: Yup.string()
-        .required("Recipient is required")
-        .matches(/^0x[a-fA-F0-9]{40}$/, "Invalid Ethereum address"),
-      amount: Yup.number()
-        .required("Amount is required")
-        .min(0.1, "Amount must be at least 0.1 CELO"),
-
-      additionalFee: Yup.boolean().oneOf([true]),
-    }),
+    validationSchema: validationSchema,
 
     onSubmit: async (values) => {
       try {
+        const { recipient, name, message, amount } = values;
+        let receiver;
+
+        if (recipient.startsWith("0x")) {
+          receiver = recipient;
+        }
+
+        if (phoneNumberRegex.test(recipient)) {
+          let resolvedData = await fetch(
+            `${process.env.NEXT_PUBLIC_API_URL}/api/socialconnect/lookup?handle=${recipient}`
+          );
+          let data: LookupResponse = await resolvedData.json();
+          if ("error" in data) {
+            toast.error("Error looking up recipient");
+            giftCard.setFieldError("recipient", "Error looking up recipient");
+            return;
+          } else {
+            receiver = data.accounts[0];
+            if (!receiver) {
+              giftCard.setFieldError(
+                "recipient",
+                "No address found for recipient!"
+              );
+              return;
+            }
+            setResolvedAccount(receiver);
+          }
+        }
+
         const approval = await readContractAsync(config, {
           ...erc20Contract,
           functionName: "allowance",
           args: [address as `0x${string}`, MGCADDRESS],
         });
-
-        console.log({ approval });
 
         if (approval < parseEther(values.amount.toString())) {
           const hash = await walletClient.writeContract({
@@ -98,10 +114,10 @@ const Dashboard = () => {
           });
           let base64ImageURI = (await imageUploadToIPFS).toString();
 
-          const msgName = values.name || iconTypes[cards[cardIndex]].name;
+          const msgName = name || iconTypes[cards[cardIndex]].name;
           const tokenMetadata = {
             name: msgName,
-            description: values.message,
+            description: message,
             image: `ipfs://${base64ImageURI}`,
           };
 
@@ -125,9 +141,9 @@ const Dashboard = () => {
                 .NEXT_PUBLIC_GIFT_CARD_ADDRESS as `0x${string}`,
               functionName: "safeMint",
               args: [
-                values.recipient,
-                parseEther(values.amount.toString()),
-                values.message,
+                receiver,
+                parseEther(amount.toString()),
+                message,
                 msgName,
                 tokenURI,
               ],
@@ -156,6 +172,11 @@ const Dashboard = () => {
   useEffect(() => {
     if (isConfirmed) {
       toast.success("Gift card sent successfully!");
+      phoneNumberRegex.test(giftCard.values.recipient) &&
+        fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/api/notify?recipient=${giftCard.values.recipient}&amount=${giftCard.values.amount}`
+        );
+      setResolvedAccount("");
       giftCard.resetForm();
     }
   }, [isConfirmed]);
@@ -171,7 +192,7 @@ const Dashboard = () => {
     isClearable: true,
     onClear: () => giftCard.setFieldValue(name, ""),
     variant: "bordered" as const,
-    isDisabled: isPending || isConfirming,
+    isDisabled: giftCard.isSubmitting || isPending || isConfirming,
   });
 
   return (
@@ -212,7 +233,7 @@ const Dashboard = () => {
               classNames={{
                 wrapper: "group-data-[selected]:bg-fig",
               }}
-              defaultSelected
+              isSelected={giftCard.values.showWatermark}
               aria-label="Show Watermark"
               onChange={(e) =>
                 giftCard.setFieldValue("showWatermark", e.target.checked)
@@ -224,7 +245,15 @@ const Dashboard = () => {
             type="text"
             label="Recipient"
             placeholder="0x00000000..."
-            description="The wallet of the person you are sending the gift card to."
+            onChange={(e) => {
+              giftCard.setFieldValue("recipient", e.target.value);
+              resolvedAccount && setResolvedAccount("");
+            }}
+            description={
+              resolvedAccount
+                ? resolvedAccount
+                : "The address or phone number of the recipient of the gift card"
+            }
           />
           <Input
             {...formProps("amount")}
@@ -249,6 +278,7 @@ const Dashboard = () => {
             placeholder="Write a message..."
             variant="bordered"
             {...giftCard.getFieldProps("message")}
+            isDisabled={giftCard.isSubmitting || isPending || isConfirming}
           />
           <Checkbox
             {...giftCard.getFieldProps("additionalFee")}
@@ -258,15 +288,16 @@ const Dashboard = () => {
             }
             classNames={{
               base: "flex items-start",
-              label: "-top-1",
+              label: "text-xs",
             }}
+            size="sm"
           >
-            I agree to pay the additional fee (5% or 1 CELO whichever is lower)
+            I agree to pay the additional fee (5% or 1 cUSD maximum)
           </Checkbox>
           <Button
             className="w-full bg-fig text-white"
             type="submit"
-            isLoading={isPending || isConfirming}
+            isLoading={giftCard.isSubmitting || isPending || isConfirming}
           >
             Mint Gift Card
           </Button>

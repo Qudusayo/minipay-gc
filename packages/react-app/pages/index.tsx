@@ -26,10 +26,10 @@ export default function Home() {
   };
 
   return (
-    <div className="h-dvh w-screen">
-      <h1 className="text-2xl font-normal text-balance text-center text-gray-800 mt-10">
-        Send tokens to friends as{" "}
-        <span className="text-forest">NFT Gift Cards</span>
+    <div className="h-dvh w-screen max-w-md mx-auto border-x">
+      <h1 className="text-2xl font-normal text-balance text-center text-gray-800 pt-10">
+        Send tokens to your <pre className="inline text-red-600">l❤️ved</pre> ones as{" "}
+        <span className=" text-red-600">NFT Gift Cards</span>
       </h1>
       <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
         <Swiper

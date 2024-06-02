@@ -15,7 +15,8 @@ const ToasterProvider = () => {
         style: {
           background: "#ffffff",
           color: "#363636",
-          minWidth: "96%",
+          width: "96%",
+          maxWidth: "27rem",
         },
         success: { duration: 3000 },
       }}
