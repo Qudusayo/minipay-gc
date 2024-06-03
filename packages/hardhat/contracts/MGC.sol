@@ -12,7 +12,7 @@ contract MGC is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable {
     IERC20 public token;
     uint256 private _tokenIdCounter;
 
-    struct GiftCardStruct {
+    struct GiftCard {
         uint256 tokenId;
         uint256 amount;
         string message;
@@ -24,7 +24,7 @@ contract MGC is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable {
         bool isInitialized;
     }
 
-    mapping(uint256 => GiftCardStruct) private _giftMap;
+    mapping(uint256 => GiftCard) private _giftMap;
     mapping(address => uint256[]) private _sentGifts;
     uint256 private _totalFees;
     uint256 private _totalFeesWithdrawn;
@@ -49,7 +49,7 @@ contract MGC is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable {
 
         require(
             _amount >= minValue,
-            "Gift card value must be greater than or equal to 0.1 CELO"
+            "Gift card value must be greater than or equal to 0.1 cUSD"
         );
 
         // Transfer the amount from the user to the contract
@@ -66,7 +66,7 @@ contract MGC is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable {
         _safeMint(to, tokenId);
         _setTokenURI(tokenId, uri);
 
-        _giftMap[tokenId] = GiftCardStruct({
+        _giftMap[tokenId] = GiftCard({
             tokenId: tokenId,
             amount: giftValue,
             message: message,
@@ -95,22 +95,22 @@ contract MGC is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable {
 
     function _getGiftCard(
         uint256 tokenId
-    ) private view returns (GiftCardStruct memory) {
-        GiftCardStruct memory card = _giftMap[tokenId];
+    ) private view returns (GiftCard memory) {
+        GiftCard memory card = _giftMap[tokenId];
         require(card.isInitialized == true, "Gift card not found");
         return card;
     }
 
     function getGiftCardByIndex(
         uint256 index
-    ) public view returns (GiftCardStruct memory) {
+    ) public view returns (GiftCard memory) {
         uint256 tokenId = tokenOfOwnerByIndex(msg.sender, index);
         return _getGiftCard(tokenId);
     }
 
     function getSentGiftCardByIndex(
         uint256 index
-    ) public view returns (GiftCardStruct memory) {
+    ) public view returns (GiftCard memory) {
         uint256[] memory tokenIds = _sentGifts[msg.sender];
         require(tokenIds.length > index, "GiftNFTCard: gift card not found");
         uint256 tokenId = tokenIds[index];
@@ -119,12 +119,12 @@ contract MGC is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable {
 
     function unwrapGiftCard(uint256 tokenId) public {
         require(ownerOf(tokenId) == msg.sender, "Caller is not owner");
-        GiftCardStruct memory gift = _getGiftCard(tokenId);
+        GiftCard memory gift = _getGiftCard(tokenId);
         _unwrapGiftCardAndDisburse(gift, msg.sender);
     }
 
     function _unwrapGiftCardAndDisburse(
-        GiftCardStruct memory gift,
+        GiftCard memory gift,
         address owner
     ) private {
         uint256 giftAmount = gift.amount;
